@@ -10,7 +10,7 @@ const VIEW_W = 960;
 const VIEW_H = 540;
 const GRAVITY = 2300;
 const LEVEL_H = 17;
-const LEVEL_W = 220;
+let levelW = 220; // 当前关卡宽度(瓦片数),由关卡定义决定
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -19,6 +19,7 @@ ctx.imageSmoothingEnabled = false;
 const hudScore = document.getElementById("hud-score");
 const hudCoins = document.getElementById("hud-coins");
 const hudLives = document.getElementById("hud-lives");
+const hudLevel = document.getElementById("hud-level");
 const hudTime = document.getElementById("hud-time");
 const overlay = document.getElementById("overlay");
 const overlayTitle = document.getElementById("overlay-title");
@@ -135,7 +136,7 @@ const MUSHROOM_ART = [
   "...TTTTTT...",
 ];
 
-function makeSprite(rows, px) {
+function makeSprite(rows, px, overrides = {}) {
   const c = document.createElement("canvas");
   c.width = rows[0].length * px;
   c.height = rows.length * px;
@@ -144,7 +145,7 @@ function makeSprite(rows, px) {
     for (let x = 0; x < row.length; x++) {
       const ch = row[x];
       if (ch === ".") continue;
-      g.fillStyle = PAL[ch] || "#f0f";
+      g.fillStyle = overrides[ch] || PAL[ch] || "#f0f";
       g.fillRect(x * px, y * px, px, px);
     }
   });
@@ -166,10 +167,156 @@ const SPR = {
   marioStand: makeSprite(MARIO_STAND, 2),
   marioRun: makeSprite(MARIO_RUN, 2),
   goomba: makeSprite(GOOMBA_ART, 2),
+  goombaFast: makeSprite(GOOMBA_ART, 2, { G: "#4a8fd4", F: "#1e3a66" }), // 蓝色快速变种
   mushroom: makeSprite(MUSHROOM_ART, 2),
 };
 SPR.marioStandL = flipSprite(SPR.marioStand);
 SPR.marioRunL = flipSprite(SPR.marioRun);
+
+/* ---------------- 主题与关卡数据 ---------------- */
+
+const THEMES = {
+  day: {
+    sky: ["#63a6ff", "#8ec5ff", "#b8e0ff"], hill: "#4f9e58", bush: "#3e8e49",
+    cloud: 0.92, sun: "#fff3b0", ground: ["#c8794a", "#8a4d2a"],
+  },
+  underground: {
+    sky: ["#0c0c18", "#14142a", "#1c1c36"], hill: "#1d1d3e", bush: "#191936",
+    cloud: 0, sun: null, ground: ["#3f74c9", "#27508f"],
+  },
+  night: {
+    sky: ["#0b1030", "#1a2150", "#2a3470"], hill: "#1f5e36", bush: "#1a4e2e",
+    cloud: 0.18, moon: true, stars: true, ground: ["#a06038", "#6e3e1e"],
+  },
+  snow: {
+    sky: ["#9fc4e8", "#c6def2", "#e9f5fd"], hill: "#e6eef8", bush: "#c2d6e8",
+    cloud: 0.95, sun: "#fff8d0", ice: true, ground: ["#d8e7f4", "#92b4d0"],
+  },
+  desert: {
+    sky: ["#ff9a5c", "#ffc26b", "#ffe2a0"], hill: "#cf9347", bush: "#a8762e",
+    cloud: 0.5, sun: "#fff0a0", sunBig: true, ground: ["#e0b35f", "#a87b2f"],
+  },
+  castle: {
+    sky: ["#190a10", "#2a1016", "#3a141a"], hill: "#34161e", bush: null,
+    cloud: 0, sun: null, lava: true, ground: ["#8a8a9c", "#555568"],
+  },
+};
+
+/*
+ * 关卡定义说明(均为瓦片坐标,地面顶部在第 15 行):
+ *   ground : [起, 止] 地面段,段间即为深坑
+ *   pipes  : [x, 高度]
+ *   rows   : [x0, x1, y, 瓦片] 横排方块(先铺)
+ *   tiles  : [x, y, 瓦片] 单个方块(后铺,可覆盖 rows)
+ *   stairs : [x, 高度, 方向] 阶梯,方向 1 升 / -1 降
+ *   coins  : [x0, x1, y] 悬浮金币排
+ *   enemies: x 或 [x, 1](1 = 蓝色快速变种)
+ */
+const LEVELS = [
+  { // 第 1 关 · 草原
+    theme: "day", width: 220, time: 300,
+    ground: [[0, 69], [73, 85], [89, 152], [156, 219]],
+    pipes: [[18, 2], [28, 3], [39, 4], [47, 4], [110, 3], [147, 2]],
+    rows: [[80, 87, 7, "B"], [128, 131, 7, "B"]],
+    tiles: [
+      [16, 11, "?"], [20, 11, "B"], [21, 11, "?"], [22, 11, "B"], [23, 11, "M"], [24, 11, "B"],
+      [22, 7, "?"], [77, 11, "B"], [78, 11, "B"], [79, 11, "?"], [80, 11, "B"],
+      [94, 11, "B"], [95, 11, "M"], [96, 11, "B"],
+      [118, 11, "?"], [119, 11, "B"], [120, 11, "B"], [121, 11, "?"], [129, 11, "?"],
+    ],
+    stairs: [[134, 4, 1], [139, 4, -1], [176, 8, 1]],
+    coins: [[33, 36, 10], [58, 62, 9], [74, 76, 8], [90, 93, 10], [102, 106, 11], [122, 126, 8], [153, 155, 7], [160, 164, 10]],
+    enemies: [22, 25, 31, 43, 52, 55, 80, 83, 97, 105, 113, 120, 126, 142, 160, 163, 170],
+    flagX: 192, castleX: 200,
+  },
+  { // 第 2 关 · 地下洞窟
+    theme: "underground", width: 230, time: 300, ceiling: true,
+    ground: [[0, 55], [59, 90], [94, 128], [131, 170], [174, 229]],
+    pipes: [[14, 3], [36, 2], [120, 4], [150, 3]],
+    rows: [
+      [20, 30, 11, "B"], [40, 50, 7, "B"],
+      [64, 68, 11, "X"], [70, 74, 7, "X"],
+      [98, 104, 11, "B"], [135, 142, 11, "B"],
+    ],
+    tiles: [
+      [22, 11, "?"], [25, 11, "M"], [28, 11, "?"], [45, 7, "?"],
+      [100, 11, "?"], [102, 11, "?"], [138, 11, "M"], [160, 11, "?"],
+    ],
+    stairs: [[186, 3, 1], [206, 8, 1]],
+    coins: [[65, 67, 10], [71, 73, 6], [91, 93, 9], [105, 109, 10], [129, 130, 9], [152, 156, 9], [171, 173, 9], [178, 182, 11]],
+    enemies: [20, 33, [48, 1], 62, 75, 86, 100, [115, 1], 125, 140, 155, [165, 1]],
+    flagX: 218, castleX: 223,
+  },
+  { // 第 3 关 · 星空夜行(坑更多)
+    theme: "night", width: 230, time: 300,
+    ground: [[0, 30], [34, 60], [65, 85], [90, 120], [124, 150], [154, 180], [184, 229]],
+    pipes: [[12, 2], [70, 3], [130, 4]],
+    rows: [
+      [40, 44, 11, "X"], [95, 99, 11, "X"], [97, 101, 7, "B"],
+      [136, 140, 11, "X"], [166, 170, 11, "X"],
+    ],
+    tiles: [
+      [18, 11, "?"], [19, 11, "M"], [50, 11, "?"], [75, 11, "?"],
+      [99, 7, "?"], [110, 11, "?"], [112, 11, "?"], [160, 11, "M"],
+    ],
+    stairs: [[206, 8, 1]],
+    coins: [[41, 43, 10], [61, 64, 8], [86, 89, 8], [96, 98, 10], [121, 123, 9], [137, 139, 10], [151, 153, 9], [167, 169, 10], [181, 183, 9]],
+    enemies: [16, [26, 1], 45, 55, 72, 80, [100, 1], 108, 115, 128, [135, 1], 145, 160, [168, 1], 175, 190],
+    flagX: 218, castleX: 223,
+  },
+  { // 第 4 关 · 冰雪滑道(地面打滑)
+    theme: "snow", width: 240, time: 320,
+    ground: [[0, 40], [44, 70], [75, 100], [104, 140], [145, 175], [180, 239]],
+    pipes: [[20, 2], [55, 3], [90, 3], [160, 4]],
+    rows: [
+      [30, 34, 11, "X"], [80, 84, 11, "X"],
+      [110, 114, 11, "X"], [116, 120, 7, "B"], [150, 154, 11, "X"],
+    ],
+    tiles: [
+      [15, 11, "?"], [32, 11, "M"], [60, 11, "?"], [82, 11, "?"],
+      [112, 11, "?"], [118, 7, "?"], [148, 11, "?"], [165, 11, "M"],
+    ],
+    stairs: [[128, 3, 1], [214, 8, 1]],
+    coins: [[41, 43, 9], [71, 74, 9], [81, 83, 10], [101, 103, 9], [111, 113, 10], [117, 119, 6], [141, 144, 9], [151, 153, 10], [176, 179, 9], [185, 190, 11]],
+    enemies: [18, 28, [38, 1], 50, 62, 78, [88, 1], 95, 108, [122, 1], 132, 148, 158, [168, 1], 185, 195],
+    flagX: 226, castleX: 231,
+  },
+  { // 第 5 关 · 黄昏沙漠(金字塔阶梯阵)
+    theme: "desert", width: 240, time: 320,
+    ground: [[0, 50], [55, 80], [84, 110], [115, 160], [165, 239]],
+    pipes: [[40, 3], [75, 2], [145, 3], [170, 4]],
+    rows: [],
+    tiles: [
+      [12, 11, "?"], [35, 11, "M"], [90, 11, "?"], [91, 11, "?"],
+      [122, 11, "?"], [152, 11, "?"], [185, 11, "M"],
+    ],
+    stairs: [
+      [20, 4, 1], [25, 4, -1], [60, 4, 1], [65, 4, -1],
+      [95, 4, 1], [100, 4, -1], [130, 5, 1], [136, 5, -1],
+      [212, 8, 1],
+    ],
+    coins: [[21, 22, 9], [26, 27, 9], [51, 54, 8], [81, 83, 8], [96, 97, 9], [111, 114, 8], [131, 133, 7], [161, 164, 8], [175, 179, 11]],
+    enemies: [15, [24, 1], 30, 45, [58, 1], 68, [72, 1], 88, [98, 1], 105, [120, 1], 125, [142, 1], 150, 155, [175, 1], 182, [192, 1]],
+    flagX: 226, castleX: 232,
+  },
+  { // 第 6 关 · 熔岩城堡(最终关)
+    theme: "castle", width: 250, time: 360, ceiling: true,
+    ground: [[0, 30], [33, 55], [58, 75], [79, 105], [108, 130], [134, 155], [158, 185], [189, 249]],
+    pipes: [],
+    rows: [
+      [35, 50, 7, "X"], [60, 63, 11, "X"], [82, 100, 7, "X"], [90, 93, 11, "X"],
+      [112, 115, 11, "X"], [140, 143, 11, "X"], [160, 180, 7, "X"], [165, 168, 11, "X"],
+    ],
+    tiles: [
+      [25, 11, "?"], [45, 11, "?"], [65, 11, "M"],
+      [120, 11, "?"], [146, 11, "?"], [170, 11, "?"],
+    ],
+    stairs: [[222, 8, 1]],
+    coins: [[31, 32, 9], [56, 57, 9], [61, 62, 10], [76, 78, 9], [84, 88, 6], [91, 92, 10], [106, 107, 9], [113, 114, 10], [131, 133, 9], [141, 142, 10], [156, 157, 9], [166, 167, 10], [186, 188, 9], [195, 200, 11]],
+    enemies: [[15, 1], 22, [28, 1], 38, [44, 1], 52, 62, [70, 1], 85, [92, 1], 100, [110, 1], 118, [125, 1], 138, [148, 1], 152, [163, 1], 172, [178, 1], 192, [200, 1], 210],
+    flagX: 236, castleX: 242,
+  },
+];
 
 /* ---------------- 关卡构建 ---------------- */
 
@@ -177,88 +324,68 @@ let grid = [];       // 瓦片网格
 let pipes = [];      // 水管 {x, h}
 let flag = null;     // 旗杆 {x, topRow, slideY}
 let castleX = 0;
+let theme = THEMES.day;
 
 const SOLID = new Set(["#", "X", "B", "?", "M", "U", "P"]);
 
 function tileAt(cx, cy) {
-  if (cx < 0 || cx >= LEVEL_W) return "#";
+  if (cx < 0 || cx >= levelW) return "#";
   if (cy < 0 || cy >= LEVEL_H) return ".";
   return grid[cy][cx];
 }
 
 function setTile(cx, cy, t) {
-  if (cx < 0 || cx >= LEVEL_W || cy < 0 || cy >= LEVEL_H) return;
+  if (cx < 0 || cx >= levelW || cy < 0 || cy >= LEVEL_H) return;
   grid[cy][cx] = t;
 }
 
 function buildLevel() {
-  grid = Array.from({ length: LEVEL_H }, () => Array(LEVEL_W).fill("."));
+  const def = LEVELS[state.level];
+  levelW = def.width;
+  theme = THEMES[def.theme];
+  grid = Array.from({ length: LEVEL_H }, () => Array(levelW).fill("."));
   pipes = [];
 
-  // 地面(留出三个坑)
-  const groundSegs = [[0, 69], [73, 85], [89, 152], [156, LEVEL_W - 1]];
-  for (const [a, b] of groundSegs) {
+  for (const [a, b] of def.ground) {
     for (let x = a; x <= b; x++) { setTile(x, 15, "#"); setTile(x, 16, "#"); }
   }
 
-  // 水管
-  const addPipe = (x, h) => {
+  if (def.ceiling) {
+    for (let x = 0; x < levelW; x++) { setTile(x, 0, "#"); setTile(x, 1, "#"); }
+  }
+
+  for (const [x, h] of def.pipes) {
     pipes.push({ x, h });
     for (let r = 0; r < h; r++) { setTile(x, 14 - r, "P"); setTile(x + 1, 14 - r, "P"); }
-  };
-  addPipe(18, 2);
-  addPipe(28, 3);
-  addPipe(39, 4);
-  addPipe(47, 4);
-  addPipe(110, 3);
-  addPipe(147, 2);
+  }
 
-  // 砖块与问号块(第 11 行 = 离地 4 格)
-  setTile(16, 11, "?");
-  ["B", "?", "B", "M", "B"].forEach((t, i) => setTile(20 + i, 11, t));
-  setTile(22, 7, "?");
+  for (const [x0, x1, y, t] of def.rows) {
+    for (let x = x0; x <= x1; x++) setTile(x, y, t);
+  }
 
-  ["B", "B", "?", "B"].forEach((t, i) => setTile(77 + i, 11, t));
-  for (let x = 80; x <= 87; x++) setTile(x, 7, "B");
-  setTile(94, 11, "B");
-  setTile(95, 11, "M");
-  setTile(96, 11, "B");
+  for (const [x, y, t] of def.tiles) setTile(x, y, t);
 
-  ["?", "B", "B", "?"].forEach((t, i) => setTile(118 + i, 11, t));
-  for (let x = 128; x <= 131; x++) setTile(x, 7, "B");
-  setTile(129, 11, "?");
+  for (const [x, h, dir] of def.stairs) {
+    for (let i = 0; i < h; i++) {
+      const hh = dir > 0 ? i + 1 : h - i;
+      for (let r = 0; r < hh; r++) setTile(x + i, 14 - r, "X");
+    }
+  }
 
-  // 中段阶梯
-  for (let i = 0; i < 4; i++)
-    for (let r = 0; r <= i; r++) setTile(134 + i, 14 - r, "X");
-  for (let i = 0; i < 4; i++)
-    for (let r = 0; r <= 3 - i; r++) setTile(139 + i, 14 - r, "X");
+  for (const [x0, x1, y] of def.coins) {
+    for (let x = x0; x <= x1; x++) setTile(x, y, "o");
+  }
 
-  // 悬浮金币
-  const coinRow = (x0, x1, y) => { for (let x = x0; x <= x1; x++) setTile(x, y, "o"); };
-  coinRow(33, 36, 10);
-  coinRow(58, 62, 9);
-  coinRow(74, 76, 8);   // 跨坑奖励
-  coinRow(90, 93, 10);
-  coinRow(102, 106, 11);
-  coinRow(122, 126, 8);
-  coinRow(153, 155, 7); // 跨坑奖励
-  coinRow(160, 164, 10);
-
-  // 终点大阶梯
-  for (let i = 0; i < 8; i++)
-    for (let r = 0; r <= i; r++) setTile(176 + i, 14 - r, "X");
-
-  // 旗杆与城堡
-  flag = { x: 192, topRow: 4, slideY: (4 + 1) * TILE, done: false };
+  flag = { x: def.flagX, topRow: 4, slideY: 5 * TILE, done: false };
   for (let y = flag.topRow; y <= 14; y++) setTile(flag.x, y, "F");
-  castleX = 200;
+  castleX = def.castleX;
 }
 
 /* ---------------- 游戏状态 ---------------- */
 
 const state = {
   mode: "menu", // menu | playing | dying | win | gameover
+  level: 0,
   score: 0,
   coins: 0,
   lives: 3,
@@ -267,6 +394,8 @@ const state = {
   camX: 0,
   winTimer: 0,
 };
+
+let pendingAction = "restart"; // 开始按钮行为:restart | next
 
 let player = null;
 let enemies = [];
@@ -291,11 +420,13 @@ function resetPlayer() {
 
 function spawnEnemies() {
   enemies = [];
-  const at = (tx, dir = -1) => enemies.push({
-    x: tx * TILE, y: 13.6 * TILE, vx: 60 * dir, vy: 0,
-    w: 24, h: 24, alive: true, squash: 0, active: false,
-  });
-  [22, 25, 31, 43, 52, 55, 80, 83, 97, 105, 113, 120, 126, 142, 160, 163, 170].forEach(tx => at(tx));
+  for (const def of LEVELS[state.level].enemies) {
+    const [tx, fast] = Array.isArray(def) ? def : [def, 0];
+    enemies.push({
+      x: tx * TILE, y: 13.6 * TILE, vx: -(fast ? 95 : 60), vy: 0,
+      w: 24, h: 24, alive: true, squash: 0, active: false, fast: !!fast,
+    });
+  }
 }
 
 function startGame(fullReset) {
@@ -304,7 +435,7 @@ function startGame(fullReset) {
     state.coins = 0;
     state.lives = 3;
   }
-  state.time = 300;
+  state.time = LEVELS[state.level].time || 300;
   state.timeAcc = 0;
   state.camX = 0;
   state.mode = "playing";
@@ -321,6 +452,7 @@ function syncHUD() {
   hudScore.textContent = state.score;
   hudCoins.textContent = state.coins;
   hudLives.textContent = state.lives;
+  hudLevel.textContent = `${state.level + 1}/${LEVELS.length}`;
   hudTime.textContent = Math.max(0, Math.ceil(state.time));
 }
 
@@ -366,7 +498,14 @@ bindTouch("tc-jump", "jump");
 
 startBtn.addEventListener("click", () => {
   audio();
-  startGame(true);
+  if (pendingAction === "next") {
+    state.level++;
+    startGame(false);
+  } else {
+    state.level = 0;
+    startGame(true);
+  }
+  pendingAction = "restart";
 });
 
 /* ---------------- 物理与碰撞 ---------------- */
@@ -490,8 +629,9 @@ function checkCoinLife() {
 
 function updatePlayer(dt) {
   const p = player;
+  const ice = theme.ice && p.onGround; // 冰面:加速慢、刹不住
   const maxSpeed = keys.run ? 290 : 185;
-  const accel = p.onGround ? 1400 : 900;
+  const accel = p.onGround ? (ice ? 720 : 1400) : 900;
 
   if (keys.left && !keys.right) {
     p.vx = Math.max(p.vx - accel * dt, -maxSpeed);
@@ -500,7 +640,7 @@ function updatePlayer(dt) {
     p.vx = Math.min(p.vx + accel * dt, maxSpeed);
     p.face = 1;
   } else {
-    const fric = (p.onGround ? 1600 : 300) * dt;
+    const fric = (p.onGround ? (ice ? 320 : 1600) : 300) * dt;
     if (Math.abs(p.vx) <= fric) p.vx = 0;
     else p.vx -= Math.sign(p.vx) * fric;
   }
@@ -678,7 +818,8 @@ function updateDying(dt) {
     state.lives--;
     if (state.lives <= 0) {
       state.mode = "gameover";
-      showOverlay("游戏结束", `最终得分 ${state.score}`, "再来一次");
+      pendingAction = "restart";
+      showOverlay("游戏结束", `最终得分 ${state.score} · 止步第 ${state.level + 1} 关`, "再来一次");
     } else {
       startGame(false);
     }
@@ -703,7 +844,18 @@ function updateWin(dt) {
     if (p.x > (castleX + 3) * TILE) p.vx = 0;
   } else {
     state.mode = "menu";
-    showOverlay("🎉 恭喜通关!", `最终得分 ${state.score} · 金币 ${state.coins}`, "再玩一次");
+    if (state.level < LEVELS.length - 1) {
+      pendingAction = "next";
+      const NAMES = ["草原", "地下洞窟", "星空夜行", "冰雪滑道", "黄昏沙漠", "熔岩城堡"];
+      showOverlay(
+        `第 ${state.level + 1} 关通过!`,
+        `当前得分 ${state.score} · 下一关:${NAMES[state.level + 1]}`,
+        "进入下一关"
+      );
+    } else {
+      pendingAction = "restart";
+      showOverlay("🎉 全部通关!", `最终得分 ${state.score} · 金币 ${state.coins}`, "再玩一次");
+    }
   }
 }
 
@@ -719,49 +871,97 @@ function showOverlay(title, msg, btn) {
 function drawBackground() {
   // 天空渐变
   const sky = ctx.createLinearGradient(0, 0, 0, VIEW_H);
-  sky.addColorStop(0, "#63a6ff");
-  sky.addColorStop(0.7, "#8ec5ff");
-  sky.addColorStop(1, "#b8e0ff");
+  sky.addColorStop(0, theme.sky[0]);
+  sky.addColorStop(0.7, theme.sky[1]);
+  sky.addColorStop(1, theme.sky[2]);
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-  // 太阳
-  ctx.fillStyle = "#fff3b0";
-  ctx.beginPath();
-  ctx.arc(820, 80, 38, 0, Math.PI * 2);
-  ctx.fill();
+  // 星星(夜晚)
+  if (theme.stars) {
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    for (let i = 0; i < 70; i++) {
+      let sx = (i * 137 + 40 - state.camX * 0.1) % 1000;
+      if (sx < 0) sx += 1000;
+      const tw = Math.sin(performance.now() / 500 + i) > -0.6 ? 1 : 0;
+      if (tw) ctx.fillRect(sx, (i * 67) % 320, 1 + (i % 2), 1 + (i % 2));
+    }
+  }
+
+  // 月亮 / 太阳
+  if (theme.moon) {
+    ctx.fillStyle = "#f2efdc";
+    ctx.beginPath();
+    ctx.arc(820, 80, 32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = theme.sky[0];
+    ctx.beginPath();
+    ctx.arc(834, 70, 26, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (theme.sun) {
+    ctx.fillStyle = theme.sun;
+    ctx.beginPath();
+    ctx.arc(820, 80, theme.sunBig ? 54 : 38, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // 远山 (视差 0.4)
-  ctx.fillStyle = "#4f9e58";
-  for (let i = 0; i < 30; i++) {
-    const hx = i * 460 - (state.camX * 0.4) % 460 - 230;
-    ctx.beginPath();
-    ctx.moveTo(hx, 480);
-    ctx.quadraticCurveTo(hx + 130, 290, hx + 260, 480);
-    ctx.fill();
+  if (theme.hill) {
+    ctx.fillStyle = theme.hill;
+    for (let i = 0; i < 30; i++) {
+      const hx = i * 460 - (state.camX * 0.4) % 460 - 230;
+      ctx.beginPath();
+      ctx.moveTo(hx, 480);
+      ctx.quadraticCurveTo(hx + 130, 290, hx + 260, 480);
+      ctx.fill();
+    }
   }
 
   // 云 (视差 0.6)
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  for (let i = 0; i < 30; i++) {
-    const cx = i * 390 - (state.camX * 0.6) % 390 - 150;
-    const cy = 70 + (i * 53 % 90);
-    ctx.beginPath();
-    ctx.arc(cx, cy, 22, 0, Math.PI * 2);
-    ctx.arc(cx + 26, cy - 10, 26, 0, Math.PI * 2);
-    ctx.arc(cx + 56, cy, 22, 0, Math.PI * 2);
-    ctx.fill();
+  if (theme.cloud > 0.03) {
+    ctx.fillStyle = `rgba(255,255,255,${theme.cloud})`;
+    for (let i = 0; i < 30; i++) {
+      const cx = i * 390 - (state.camX * 0.6) % 390 - 150;
+      const cy = 70 + (i * 53 % 90);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 22, 0, Math.PI * 2);
+      ctx.arc(cx + 26, cy - 10, 26, 0, Math.PI * 2);
+      ctx.arc(cx + 56, cy, 22, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // 灌木 (视差 0.85)
-  ctx.fillStyle = "#3e8e49";
-  for (let i = 0; i < 40; i++) {
-    const bx = i * 310 - (state.camX * 0.85) % 310 - 100;
-    ctx.beginPath();
-    ctx.arc(bx, 482, 20, Math.PI, 0);
-    ctx.arc(bx + 24, 482, 26, Math.PI, 0);
-    ctx.arc(bx + 50, 482, 20, Math.PI, 0);
-    ctx.fill();
+  if (theme.bush) {
+    ctx.fillStyle = theme.bush;
+    for (let i = 0; i < 40; i++) {
+      const bx = i * 310 - (state.camX * 0.85) % 310 - 100;
+      ctx.beginPath();
+      ctx.arc(bx, 482, 20, Math.PI, 0);
+      ctx.arc(bx + 24, 482, 26, Math.PI, 0);
+      ctx.arc(bx + 50, 482, 20, Math.PI, 0);
+      ctx.fill();
+    }
+  }
+
+  // 熔岩(城堡关,深坑底部可见)
+  if (theme.lava) {
+    const ly = 15.35 * TILE;
+    const lg = ctx.createLinearGradient(0, ly, 0, VIEW_H);
+    lg.addColorStop(0, "#ff9a3c");
+    lg.addColorStop(0.35, "#f25c20");
+    lg.addColorStop(1, "#8a1408");
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, ly, VIEW_W, VIEW_H - ly);
+    ctx.fillStyle = "#ffc66b";
+    for (let i = 0; i < 14; i++) {
+      let bx = (i * 211 - state.camX) % 1100;
+      if (bx < 0) bx += 1100;
+      const r = 3 + Math.abs(Math.sin(performance.now() / 400 + i * 1.7)) * 5;
+      ctx.beginPath();
+      ctx.arc(bx, ly + 6, r, Math.PI, 0);
+      ctx.fill();
+    }
   }
 }
 
@@ -777,9 +977,9 @@ function bumpOffset(cx, cy) {
 function drawTile(t, px, py, cx, cy) {
   switch (t) {
     case "#": {
-      ctx.fillStyle = "#c8794a";
+      ctx.fillStyle = theme.ground[0];
       ctx.fillRect(px, py, TILE, TILE);
-      ctx.fillStyle = "#8a4d2a";
+      ctx.fillStyle = theme.ground[1];
       ctx.fillRect(px, py, TILE, 3);
       ctx.fillRect(px, py + 16, TILE, 2);
       ctx.fillRect(px + (cy % 2 ? 8 : 20), py + 3, 2, 13);
@@ -915,7 +1115,7 @@ function drawCastle() {
 
 function drawTiles() {
   const cx0 = Math.max(0, Math.floor(state.camX / TILE) - 1);
-  const cx1 = Math.min(LEVEL_W - 1, Math.ceil((state.camX + VIEW_W) / TILE) + 1);
+  const cx1 = Math.min(levelW - 1, Math.ceil((state.camX + VIEW_W) / TILE) + 1);
   for (let cy = 0; cy < LEVEL_H; cy++) {
     for (let cx = cx0; cx <= cx1; cx++) {
       const t = grid[cy][cx];
@@ -951,11 +1151,12 @@ function drawEnemies() {
     if (!e.alive) continue;
     const dx = e.x - state.camX;
     if (dx < -64 || dx > VIEW_W + 64) continue;
+    const spr = e.fast ? SPR.goombaFast : SPR.goomba;
     if (e.squash > 0) {
-      ctx.drawImage(SPR.goomba, dx, e.y + e.h - 10, e.w, 10);
+      ctx.drawImage(spr, dx, e.y + e.h - 10, e.w, 10);
     } else {
       const wob = Math.sin(performance.now() / 120) * 1.5;
-      ctx.drawImage(SPR.goomba, dx, e.y + wob, e.w, e.h);
+      ctx.drawImage(spr, dx, e.y + wob, e.w, e.h);
     }
   }
 }
@@ -1038,7 +1239,7 @@ function frame(now) {
   // 镜头跟随
   if (player) {
     const target = player.x + player.w / 2 - VIEW_W * 0.4;
-    state.camX = Math.max(0, Math.min(target, LEVEL_W * TILE - VIEW_W));
+    state.camX = Math.max(0, Math.min(target, levelW * TILE - VIEW_W));
   }
 
   draw();
