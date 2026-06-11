@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>超级玛丽 · Super Mario</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game-wrap">
+    <div id="hud">
+      <div class="hud-item">分数 <span id="hud-score">0</span></div>
+      <div class="hud-item">金币 <span id="hud-coins">0</span></div>
+      <div class="hud-item">生命 <span id="hud-lives">3</span></div>
+      <div class="hud-item">时间 <span id="hud-time">300</span></div>
+    </div>
+    <canvas id="game" width="960" height="540"></canvas>
+    <div id="overlay">
+      <h1 id="overlay-title">超级玛丽</h1>
+      <p id="overlay-msg">方向键 / A D 移动 &nbsp;·&nbsp; 空格 / W / ↑ 跳跃 &nbsp;·&nbsp; Shift 加速跑</p>
+      <button id="start-btn">开始游戏</button>
+    </div>
+    <div id="touch-controls">
+      <div class="tc-left">
+        <button class="tc-btn" id="tc-left">◀</button>
+        <button class="tc-btn" id="tc-right">▶</button>
+      </div>
+      <div class="tc-right">
+        <button class="tc-btn" id="tc-jump">跳</button>
+      </div>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
